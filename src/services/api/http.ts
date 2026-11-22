@@ -1,6 +1,7 @@
 import { clearSession, getAccessToken } from '../authSession'
+import { normalizeApiBaseUrl } from './apiBaseUrl'
 
-const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:4000/api').replace(/\/$/, '')
+const API_BASE_URL = normalizeApiBaseUrl(import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:4000/api')
 
 export class ApiError extends Error {
   readonly status: number

@@ -24,7 +24,7 @@
       - key: AUTH_RESET_TOKEN_EXPOSE
         value: "false"
       - key: CLIENT_URL
-        sync: false
+        value: https://smart-queue-94ceuh7kx-invicta-stack.vercel.app
       - key: CLIENT_URLS
         sync: false
       - key: HOSPITAL_TIME_ZONE
