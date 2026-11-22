@@ -8,19 +8,27 @@ import { authService, type AuthService } from '../services/authService.ts'
 const authRateLimit = rateLimit({
   windowMs: env.authRateLimitWindowMs,
   limit: env.authRateLimitMax,
+  skipSuccessfulRequests: true,
   standardHeaders: 'draft-8',
   legacyHeaders: false,
   handler: (_request, response) => response.status(429).json({ status: 'error', message: 'Too many authentication requests. Try again later.' }),
 })
+const otpIpRateLimit = rateLimit({
+  windowMs: 15 * 60_000,
+  limit: 5,
+  standardHeaders: 'draft-8',
+  legacyHeaders: false,
+  handler: (_request, response) => response.status(429).json({ status: 'error', message: 'Too many verification requests. Try again later.' }),
+})
 
-export function createAuthRouter(service: AuthService = authService, rateLimiter: RequestHandler = authRateLimit) {
+export function createAuthRouter(service: AuthService = authService, rateLimiter: RequestHandler = authRateLimit, otpRateLimiter: RequestHandler = otpIpRateLimit) {
   const router = Router()
   const controller = createAuthController(service)
   const authenticate = createAuthenticationMiddleware(service)
 
   router.post('/register', rateLimiter, controller.register)
-  router.post('/verify-otp', rateLimiter, controller.verifyEmail)
-  router.post('/resend-otp', rateLimiter, controller.resendVerification)
+  router.post('/verify-otp', rateLimiter, otpRateLimiter, controller.verifyEmail)
+  router.post('/resend-otp', rateLimiter, otpRateLimiter, controller.resendVerification)
   router.post('/login', rateLimiter, controller.login)
   router.get('/me', authenticate, controller.me)
   router.patch('/change-password', rateLimiter, authenticate, controller.changePassword)

@@ -1,0 +1,22 @@
+.app-preference-controls { position: fixed; right: 1rem; bottom: 1rem; z-index: 200; display: flex; gap: .4rem; align-items: center; padding: .35rem; border: 1px solid #cbd5e1; border-radius: 999px; background: #fff; box-shadow: 0 5px 20px #153e7526; }
+.app-preference-controls select, .app-preference-controls button { min-height: 38px; border: 0; border-radius: 999px; padding: 0 .75rem; color: #153e75; background: transparent; cursor: pointer; }
+.app-preference-controls button { display: grid; width: 40px; place-items: center; }
+.app-preference-controls button:hover, .app-preference-controls select:hover { background: #eaf3fc; }
+.app-preference-controls select:focus-visible, .app-preference-controls button:focus-visible { outline: 2px solid #2878d0; }
+
+:root[data-theme='dark'] { color-scheme: dark; --background: #0c1420; --surface: #141f2e; --text: #e2e8f0; --muted: #a8b5c6; --border: #344256; --light-blue: #1c3048; --navy: #b8d7fa; }
+:root[data-theme='dark'] body, :root[data-theme='dark'] #root { color: #e2e8f0; background: #0c1420; }
+:root[data-theme='dark'] .site-header, :root[data-theme='dark'] .dashboard-sidebar, :root[data-theme='dark'] .admin-sidebar, :root[data-theme='dark'] .admin-header, :root[data-theme='dark'] .dashboard-header { color: #e2e8f0; background: #111b29; border-color: #344256; }
+:root[data-theme='dark'] .hero-section, :root[data-theme='dark'] .landing-page, :root[data-theme='dark'] .dashboard-shell, :root[data-theme='dark'] .dashboard-main, :root[data-theme='dark'] .dashboard-content, :root[data-theme='dark'] .admin-shell, :root[data-theme='dark'] .admin-main, :root[data-theme='dark'] .admin-content, :root[data-theme='dark'] .auth-page, :root[data-theme='dark'] .booking-page, :root[data-theme='dark'] .queue-page, :root[data-theme='dark'] .public-statistics-page { color: #e2e8f0; background-color: #0c1420; }
+:root[data-theme='dark'] .active-queue-card, :root[data-theme='dark'] .stat-card, :root[data-theme='dark'] .appointment-card, :root[data-theme='dark'] .quick-action-card, :root[data-theme='dark'] .auth-card, :root[data-theme='dark'] .booking-step, :root[data-theme='dark'] .booking-summary, :root[data-theme='dark'] .queue-token-card, :root[data-theme='dark'] .queue-stat, :root[data-theme='dark'] .queue-progress-card, :root[data-theme='dark'] .admin-section, :root[data-theme='dark'] .admin-appointment, :root[data-theme='dark'] .counter-card, :root[data-theme='dark'] .admin-stat, :root[data-theme='dark'] .queue-management-panel, :root[data-theme='dark'] .queue-token-card, :root[data-theme='dark'] .document-card, :root[data-theme='dark'] .profile-card, :root[data-theme='dark'] .settings-card, :root[data-theme='dark'] .modal-card, :root[data-theme='dark'] .statistics-panel, :root[data-theme='dark'] .statistics-card { color: #e2e8f0; background-color: #141f2e; border-color: #344256; }
+:root[data-theme='dark'] h1, :root[data-theme='dark'] h2, :root[data-theme='dark'] h3, :root[data-theme='dark'] strong, :root[data-theme='dark'] label, :root[data-theme='dark'] th { color: #e5edf7; }
+:root[data-theme='dark'] p, :root[data-theme='dark'] small, :root[data-theme='dark'] .card-subtitle, :root[data-theme='dark'] .admin-kicker, :root[data-theme='dark'] .dashboard-kicker { color: #a8b5c6; }
+:root[data-theme='dark'] input, :root[data-theme='dark'] select, :root[data-theme='dark'] textarea { color: #e2e8f0; background: #0f1926; border-color: #44546a; }
+:root[data-theme='dark'] table, :root[data-theme='dark'] td, :root[data-theme='dark'] th, :root[data-theme='dark'] tr { border-color: #344256; }
+:root[data-theme='dark'] .admin-queue-table-wrap, :root[data-theme='dark'] .queue-management-table-wrap { background: #141f2e; }
+:root[data-theme='dark'] .button--secondary, :root[data-theme='dark'] .admin-action-button--secondary { color: #dbeafe; background: #1a2a3d; border-color: #44546a; }
+:root[data-theme='dark'] .app-preference-controls { background: #141f2e; border-color: #44546a; }
+:root[data-theme='dark'] .app-preference-controls select, :root[data-theme='dark'] .app-preference-controls button { color: #e5edf7; }
+:root[data-theme='dark'] .app-preference-controls button:hover, :root[data-theme='dark'] .app-preference-controls select:hover { background: #26384e; }
+:root[data-theme='dark'] .recharts-cartesian-grid line { stroke: #344256; }
+@media (max-width: 560px) { .app-preference-controls { right: .55rem; bottom: .55rem; } }

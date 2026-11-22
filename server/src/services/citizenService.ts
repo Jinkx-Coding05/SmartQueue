@@ -4,6 +4,7 @@ import { env } from '../config/env.ts'
 import type { AppointmentStatus } from '../models/sharedEnums.ts'
 import { normalizePhone } from './authValidation.ts'
 import type { CitizenRepository, ProfileRecord, DepartmentRecord, TokenRecord, AppointmentRecord, DocumentRecord, NotificationRecord } from './citizenRepository.ts'
+import { estimateQueue } from './queueEstimate.ts'
 import { mongooseCitizenRepository, type PageResult } from './citizenRepository.ts'
 import type { CreateAppointmentInput, CreateDocumentInput, CreateTokenInput, PaginationInput, PatchAppointmentInput, ProfilePatch } from './citizenValidation.ts'
 
@@ -130,9 +131,16 @@ export class CitizenService {
     const token = await this.repository.getOwnedToken(userId, tokenId)
     if (!token) throw new CitizenError('Token was not found.', 404)
     const { start, end } = hospitalDayRange(token.bookingDate, env.hospitalTimeZone)
-    const ahead = token.status === 'waiting' ? await this.repository.countWaitingAhead(token.departmentId, token.bookingDate, token.id, start, end) : 0
-    const serving = await this.repository.getCurrentlyServing(token.departmentId, start, end)
-    const queuePosition = token.status === 'waiting' ? ahead + 1 : token.status === 'serving' ? 0 : null
+    const [snapshot, serving] = await Promise.all([
+      this.repository.getQueueSnapshot(token.departmentId, start, end),
+      this.repository.getCurrentlyServing(token.departmentId, start, end),
+    ])
+    const now = new Date()
+    const estimate = estimateQueue(snapshot, token.id, now, env.defaultServiceDurationMinutes)
+    const arrivalBufferMinutes = token.status === 'waiting' && estimate.estimatedWaitingTime !== null ? env.citizenArrivalBufferMinutes : 0
+    const suggestedArrivalAt = estimate.estimatedArrivalAt && arrivalBufferMinutes > 0
+      ? new Date(Date.parse(estimate.estimatedArrivalAt) + arrivalBufferMinutes * 60_000).toISOString()
+      : estimate.estimatedArrivalAt
     return {
       id: token.id,
       tokenNumber: token.tokenNumber,
@@ -140,12 +148,19 @@ export class CitizenService {
       preferredTime: token.preferredTime ?? null,
       visitType: token.visitType ?? null,
       status: token.status,
-      queuePosition,
+      queuePosition: token.status === 'serving' ? 0 : estimate.queuePosition,
+      patientsAhead: estimate.patientsAhead,
       department: { id: token.departmentId, name: token.departmentName },
       assignedCounter: token.counterId ? { id: token.counterId, name: token.counterName } : null,
       currentlyServingToken: serving?.tokenNumber ?? null,
-      estimatedWaitingTime: token.status === 'waiting' ? token.estimatedWaitingTime : 0,
-      lastUpdatedAt: token.updatedAt,
+      estimatedWaitingTime: estimate.estimatedWaitingTime,
+      estimatedServiceDurationMinutes: estimate.serviceDurationMinutes ?? null,
+      serviceDurationSource: estimate.serviceDurationSource ?? null,
+      arrivalBufferMinutes,
+      totalArrivalAllowanceMinutes: estimate.estimatedWaitingTime === null ? null : estimate.estimatedWaitingTime + arrivalBufferMinutes,
+      estimatedArrivalAt: estimate.estimatedArrivalAt,
+      suggestedArrivalAt,
+      lastUpdatedAt: now.toISOString(),
     }
   }
 
@@ -300,7 +315,7 @@ function ensureObjectId(id: string) {
   if (!mongoose.isValidObjectId(id)) throw new CitizenError('The requested ID is invalid.', 400)
 }
 function isDuplicateKeyError(error: unknown): boolean { return typeof error === 'object' && error !== null && 'code' in error && error.code === 11000 }
-function hospitalDayRange(date: Date, timeZone: string) {
+export function hospitalDayRange(date: Date, timeZone: string) {
   const parts = dateParts(date, timeZone)
   const nextDate = new Date(Date.UTC(parts.year, parts.month - 1, parts.day + 1))
   const start = zonedMidnight(parts.year, parts.month, parts.day, timeZone)

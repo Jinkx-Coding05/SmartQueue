@@ -20,13 +20,13 @@ export function createAuthController(service: AuthService) {
     }
     try {
       const result = await service.register(parsed.data)
-      const { debugVerificationCode, ...publicResult } = result
+      const { developmentOnlyOtp, ...publicResult } = result
       response.status(201).json({
         status: 'success',
-        message: result.deliveryConfigured ? 'Account created. Check your email for the verification code.' : 'Account created. Verification delivery is not configured yet.',
+        message: developmentOnlyOtp ? 'Account created. Retrieve the development-only code from this API response.' : result.deliveryConfigured ? 'Account created. Check your email for the verification code.' : 'Account created. If verification is required, a code will be sent when delivery is available.',
         data: {
           ...publicResult,
-          ...(env.nodeEnv === 'development' && env.exposeOtp && debugVerificationCode ? { debugVerificationCode } : {}),
+          ...(service.isDevelopmentOtpExposureEnabled() && developmentOnlyOtp ? { developmentOnlyOtp } : {}),
         },
       })
     } catch (error) { next(error) }
@@ -67,7 +67,7 @@ export function createAuthController(service: AuthService) {
     } catch (error) { next(error) }
   }
 
-  const forgotPassword: RequestHandler = async (request, response, next) => {
+  const forgotPassword: RequestHandler = async (request, response) => {
     const parsed = forgotPasswordBodySchema.safeParse(request.body)
     if (!parsed.success) {
       response.status(400).json({ status: 'error', message: 'Enter a valid email address.' })
@@ -77,11 +77,13 @@ export function createAuthController(service: AuthService) {
       const resetToken = await service.forgotPassword(parsed.data.email)
       const result: { status: string; message: string; debugResetToken?: string } = {
         status: 'success',
-        message: 'If an account exists for this email, password reset instructions will be available through the configured delivery provider.',
+        message: 'If an account exists for this email, reset instructions may be sent. This response does not confirm delivery.',
       }
       if (env.nodeEnv === 'development' && env.exposeResetToken && resetToken) result.debugResetToken = resetToken
       response.status(202).json(result)
-    } catch (error) { next(error) }
+    } catch {
+      response.status(202).json({ status: 'success', message: 'If an account exists for this email, reset instructions may be sent. This response does not confirm delivery.' })
+    }
   }
 
   const resetPassword: RequestHandler = async (request, response, next) => {
@@ -108,21 +110,23 @@ export function createAuthController(service: AuthService) {
     } catch (error) { next(error) }
   }
 
-  const resendVerification: RequestHandler = async (request, response, next) => {
+  const resendVerification: RequestHandler = async (request, response) => {
     const parsed = resendVerificationBodySchema.safeParse(request.body)
     if (!parsed.success) {
       response.status(400).json({ status: 'error', message: 'Enter a valid email address.' })
       return
     }
     try {
-      const debugVerificationCode = await service.resendVerificationCode(parsed.data.email)
-      const result: { status: string; message: string; debugVerificationCode?: string } = {
+      const resend = await service.resendVerificationCode(parsed.data.email)
+      const result: { status: string; message: string; developmentOnlyOtp?: string } = {
         status: 'success',
-        message: 'If the account requires verification, a code will be delivered when a provider is configured.',
+        message: 'If the account requires verification, a code may be sent to its email address. This response does not confirm delivery.',
       }
-      if (env.nodeEnv === 'development' && env.exposeOtp && debugVerificationCode) result.debugVerificationCode = debugVerificationCode
+      if (service.isDevelopmentOtpExposureEnabled() && resend.developmentOnlyOtp) result.developmentOnlyOtp = resend.developmentOnlyOtp
       response.status(202).json(result)
-    } catch (error) { next(error) }
+    } catch {
+      response.status(202).json({ status: 'success', message: 'If the account requires verification, a code may be sent to its email address. This response does not confirm delivery.' })
+    }
   }
 
   return { register, login, me, logout, changePassword, forgotPassword, resetPassword, verifyEmail, resendVerification }

@@ -44,6 +44,6 @@ export function verifyOtp(request: VerifyOtpRequest): Promise<{ user: AuthApiUse
   return apiRequest('/auth/verify-otp', { method: 'POST', body: JSON.stringify(request) })
 }
 
-export function resendOtp(email: string): Promise<{ status: 'success'; message: string; debugVerificationCode?: string }> {
+export function resendOtp(email: string): Promise<{ status: 'success'; message: string; developmentOnlyOtp?: string }> {
   return apiRequest('/auth/resend-otp', { method: 'POST', body: JSON.stringify({ email }) })
 }

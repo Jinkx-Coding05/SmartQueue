@@ -1,0 +1,34 @@
+﻿services:
+  - type: web
+    name: smartqueue-ai-api
+    runtime: node
+    buildCommand: npm ci && npm run build:server
+    startCommand: npm run server:start
+    healthCheckPath: /api/health
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: PORT
+        value: 10000
+      - key: MONGODB_URI
+        sync: false
+      - key: JWT_SECRET
+        sync: false
+      - key: RESEND_API_KEY
+        sync: false
+      - key: OTP_FROM_EMAIL
+        sync: false
+      - key: DEV_OTP_EXPOSE
+        value: "false"
+      - key: AUTH_RESET_TOKEN_EXPOSE
+        value: "false"
+      - key: CLIENT_URL
+        sync: false
+      - key: CLIENT_URLS
+        sync: false
+      - key: HOSPITAL_TIME_ZONE
+        value: Asia/Kolkata
+      - key: DEFAULT_SERVICE_DURATION_MINUTES
+        value: 2
+      - key: CITIZEN_ARRIVAL_BUFFER_MINUTES
+        value: 15

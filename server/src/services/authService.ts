@@ -6,7 +6,7 @@ import { env } from '../config/env.ts'
 import type { AuthRepository, UserRecord } from './authRepository.ts'
 import { isDuplicateKeyError, mongooseAuthRepository } from './authRepository.ts'
 import { normalizeEmail, normalizePhone, type LoginInput, type RegistrationInput } from './authValidation.ts'
-import { UnconfiguredOtpDeliveryProvider, type OtpDeliveryProvider } from './otpDelivery.ts'
+import { ResendOtpDeliveryProvider, UnconfiguredOtpDeliveryProvider, type OtpDeliveryProvider } from './otpDelivery.ts'
 
 export type SafeUser = Pick<UserRecord, 'id' | 'fullName' | 'email' | 'phoneNumber' | 'role' | 'accountStatus' | 'createdAt'>
 export type AuthContext = { userId: string; role: UserRole; tokenId: string; expiresAt: number; issuedAt: number; user: SafeUser }
@@ -16,6 +16,9 @@ export type AuthServiceOptions = {
   resetTokenTtlMinutes?: number
   otpTtlMinutes?: number
   exposeDevelopmentOtp?: boolean
+  runtimeEnvironment?: string
+  otpMaxAttempts?: number
+  otpResendCooldownSeconds?: number
   repository?: AuthRepository
   otpProvider?: OtpDeliveryProvider
 }
@@ -37,6 +40,8 @@ export class AuthService {
   private readonly resetTokenTtlMinutes: number
   private readonly otpTtlMinutes: number
   private readonly exposeDevelopmentOtp: boolean
+  private readonly otpMaxAttempts: number
+  private readonly otpResendCooldownSeconds: number
   private readonly otpProvider: OtpDeliveryProvider
 
   constructor(options: AuthServiceOptions = {}) {
@@ -45,30 +50,33 @@ export class AuthService {
     this.accessTokenTtlSeconds = options.accessTokenTtlSeconds ?? env.jwtTtlSeconds
     this.resetTokenTtlMinutes = options.resetTokenTtlMinutes ?? env.resetTokenTtlMinutes
     this.otpTtlMinutes = options.otpTtlMinutes ?? env.otpTtlMinutes
-    this.exposeDevelopmentOtp = options.exposeDevelopmentOtp ?? (env.nodeEnv === 'development' && env.exposeOtp)
-    this.otpProvider = options.otpProvider ?? new UnconfiguredOtpDeliveryProvider()
+    const runtimeEnvironment = options.runtimeEnvironment ?? env.nodeEnv
+    this.exposeDevelopmentOtp = runtimeEnvironment === 'development' && (options.exposeDevelopmentOtp ?? env.devOtpExpose)
+    this.otpMaxAttempts = options.otpMaxAttempts ?? env.otpMaxAttempts
+    this.otpResendCooldownSeconds = options.otpResendCooldownSeconds ?? env.otpResendCooldownSeconds
+    this.otpProvider = options.otpProvider ?? (env.resendApiKey && env.otpFromEmail ? new ResendOtpDeliveryProvider() : new UnconfiguredOtpDeliveryProvider())
   }
 
   async register(input: RegistrationInput) {
     const email = normalizeEmail(input.email)
     const phoneNumber = normalizePhone(input.phone)
     if (!/^\+?[1-9]\d{7,14}$/.test(phoneNumber)) throw new AuthError('Enter a valid international phone number.', 400)
-    if (await this.repository.findByEmailOrPhone(email, phoneNumber)) {
-      throw new AuthError('An account with this email or phone number already exists.', 409)
-    }
+    if (!isValidEmail(email)) throw new AuthError('Registration details are invalid.', 400)
+    if (await this.repository.findByEmailOrPhone(email, phoneNumber)) throw new AuthError('Unable to create an account with those details.', 400)
 
     const passwordHash = await bcrypt.hash(input.password, 12)
     try {
       const user = await this.repository.createUser({ fullName: input.fullName.trim(), email, phoneNumber, passwordHash, passwordChangedAt: new Date(), role: 'citizen', emailVerified: false })
       const verificationCode = await this.createVerificationCode(email)
+      if (!verificationCode) throw new AuthError('Verification could not be started. Please try again later.', 503)
       return {
         user: toSafeUser(user),
         verificationRequired: true as const,
-        deliveryConfigured: verificationCode.delivered,
-        ...(this.exposeDevelopmentOtp ? { debugVerificationCode: verificationCode.code } : {}),
+        deliveryConfigured: verificationCode.deliveryMethod === 'email',
+          ...(verificationCode.developmentOnlyOtp ? { developmentOnlyOtp: verificationCode.developmentOnlyOtp } : {}),
       }
     } catch (error) {
-      if (isDuplicateKeyError(error)) throw new AuthError('An account with this email or phone number already exists.', 409)
+      if (isDuplicateKeyError(error)) throw new AuthError('Unable to create an account with those details.', 400)
       throw error
     }
   }
@@ -120,27 +128,51 @@ export class AuthService {
 
   async resendVerificationCode(emailInput: string) {
     const email = normalizeEmail(emailInput)
+    if (!isValidEmail(email)) throw new AuthError('Enter a valid email address.', 400)
     const user = await this.repository.findByEmail(email)
-    if (!user || user.emailVerified) return null
+    if (!user || user.emailVerified) return { deliveryConfigured: false as const }
     const result = await this.createVerificationCode(email)
-    return this.exposeDevelopmentOtp ? result.code : null
+    return { deliveryConfigured: result?.deliveryMethod === 'email', ...(result?.developmentOnlyOtp ? { developmentOnlyOtp: result.developmentOnlyOtp } : {}) }
   }
 
   async verifyEmail(emailInput: string, code: string) {
     const email = normalizeEmail(emailInput)
-    const user = await this.repository.consumeVerificationCode(email, hashVerificationCode(code, this.secret), new Date())
-    if (!user) throw new AuthError('Verification code is invalid or expired.', 400)
+    if (!isValidEmail(email)) throw new AuthError('Verification code is invalid or expired.', 400)
+    const now = new Date()
+    if (!/^\d{6}$/.test(code)) {
+      await this.repository.incrementVerificationAttempts(email, now, this.otpMaxAttempts)
+      throw new AuthError('Verification code is invalid or expired.', 400)
+    }
+    const user = await this.repository.consumeVerificationCode(email, hashVerificationCode(code, this.secret), now, this.otpMaxAttempts)
+    if (!user) {
+      await this.repository.incrementVerificationAttempts(email, now, this.otpMaxAttempts)
+      throw new AuthError('Verification code is invalid or expired.', 400)
+    }
     return toSafeUser(user)
+  }
+
+  isDevelopmentOtpExposureEnabled() {
+    return this.exposeDevelopmentOtp
   }
 
   async forgotPassword(emailInput: string) {
     const email = normalizeEmail(emailInput)
+    if (!isValidEmail(email)) throw new AuthError('Enter a valid email address.', 400)
     const user = await this.repository.findByEmail(email)
     if (!user) return null
     const token = randomBytes(32).toString('base64url')
     const tokenHash = hashResetToken(token)
-    const expiresAt = new Date(Date.now() + this.resetTokenTtlMinutes * 60_000)
-    await this.repository.saveResetToken(email, tokenHash, expiresAt)
+    const now = new Date()
+    const expiresAt = new Date(now.getTime() + this.resetTokenTtlMinutes * 60_000)
+    const saved = await this.repository.saveResetToken(email, tokenHash, expiresAt, now, new Date(now.getTime() - this.otpResendCooldownSeconds * 1000))
+    if (!saved) return null
+    if (env.nodeEnv === 'development' && env.exposeResetToken) return token
+    try {
+      await this.otpProvider.sendPasswordReset(email, token, expiresAt, this.resetTokenTtlMinutes)
+    } catch {
+      await this.repository.invalidateResetToken(email)
+      throw new AuthError('Email delivery is temporarily unavailable. Please try again later.', 503)
+    }
     return token
   }
 
@@ -210,12 +242,21 @@ export class AuthService {
     }
   }
 
-  private async createVerificationCode(email: string) {
+  private async createVerificationCode(email: string): Promise<{ developmentOnlyOtp?: string; deliveryMethod: 'development' | 'email' } | null> {
     const code = String(randomInt(0, 1_000_000)).padStart(6, '0')
-    const expiresAt = new Date(Date.now() + this.otpTtlMinutes * 60_000)
-    await this.repository.saveVerificationCode(email, hashVerificationCode(code, this.secret), expiresAt)
-    const delivered = await this.otpProvider.sendVerificationCode(email, code)
-    return { code, delivered }
+    if (!isValidEmail(email)) throw new AuthError('Enter a valid email address.', 400)
+    const now = new Date()
+    const expiresAt = new Date(now.getTime() + this.otpTtlMinutes * 60_000)
+    const saved = await this.repository.saveVerificationCode(email, hashVerificationCode(code, this.secret), expiresAt, now, new Date(now.getTime() - this.otpResendCooldownSeconds * 1000))
+    if (!saved) return null
+    if (this.exposeDevelopmentOtp) return { developmentOnlyOtp: code, deliveryMethod: 'development' as const }
+    try {
+      await this.otpProvider.sendCode(email, code, 'email verification', expiresAt, this.otpTtlMinutes)
+    } catch {
+      await this.repository.invalidateVerificationCode(email)
+      throw new AuthError('Email delivery is temporarily unavailable. Please try again later.', 503)
+    }
+    return { developmentOnlyOtp: undefined, deliveryMethod: 'email' as const }
   }
 }
 
@@ -227,6 +268,10 @@ export function hashResetToken(token: string) {
 
 function hashVerificationCode(code: string, secret: string) {
   return createHmac('sha256', secret).update(code).digest('hex')
+}
+
+function isValidEmail(value: string) {
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value) && value.length <= 254
 }
 
 function toSafeUser(user: UserRecord): SafeUser {

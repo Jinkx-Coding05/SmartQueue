@@ -19,7 +19,7 @@ export type RegisterRequest = {
 }
 
 export type LoginRequest = { email: string; password: string }
-export type RegisterResponse = { user: AuthApiUser; verificationRequired: true; deliveryConfigured: boolean; debugVerificationCode?: string }
+export type RegisterResponse = { user: AuthApiUser; verificationRequired: true; deliveryConfigured: boolean; developmentOnlyOtp?: string }
 export type ResetPasswordRequest = { token: string; password: string; confirmPassword: string }
 export type VerifyOtpRequest = { email: string; code: string }
 export type AuthSessionResponse = { user: AuthApiUser; accessToken: string; expiresIn: number }

@@ -28,6 +28,22 @@ test('admin request schemas reject invalid status, IDs, pagination, and mass ass
   assert.equal((await request('/api/admin/departments', 'admin', 'POST', { name: 'X' })).status, 400)
 })
 
+test('walk-in registration is admin-only, validates patient and assignment fields, and returns the generated record', async () => {
+  const registration = { patient: { id: 'patient-1', fullName: 'Walk-in Patient', phoneNumber: '+919876543210' }, token: { tokenNumber: 'SQ-20261122-ABC123' } }
+  let received = null
+  const { request } = await api(new Proxy({ registerWalkInPatient: async (actor, input) => { received = { actor, input }; return registration } }, { get: (target, method) => target[method] ?? (async () => ({ items: [] })) }))
+  const path = '/api/admin/walk-in-patients'
+  const payload = { fullName: 'Walk-in Patient', phoneNumber: '+919876543210', departmentId: '000000000000000000000011', counterId: '000000000000000000000012' }
+  assert.equal((await request(path, undefined, 'POST', payload)).status, 401)
+  assert.equal((await request(path, 'citizen', 'POST', payload)).status, 403)
+  assert.equal((await request(path, 'admin', 'POST', { ...payload, counterId: 'invalid' })).status, 400)
+  const created = await request(path, 'admin', 'POST', payload)
+  assert.equal(created.status, 201)
+  assert.deepEqual(created.data, registration)
+  assert.equal(received.actor, adminId)
+  assert.deepEqual(received.input, payload)
+})
+
 test('admin profile is self scoped and notification preferences are strictly validated', async () => {
   const { request } = await api()
   assert.equal((await request('/api/admin/profile', 'admin')).status, 200)

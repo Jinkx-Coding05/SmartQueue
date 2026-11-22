@@ -39,7 +39,7 @@ export function RegisterPage() {
     if (Object.keys(nextErrors).length > 0) return
 
     setLoading(true); setApiError('')
-    try { const result = await register({ fullName: name.trim(), email: email.trim().toLowerCase(), phone: phone.trim(), password, confirmPassword }); sessionStorage.setItem('smartqueue.pendingEmail', result.user.email); navigate('/verify-otp', { state: { debugVerificationCode: result.debugVerificationCode, deliveryConfigured: result.deliveryConfigured } }) }
+    try { const result = await register({ fullName: name.trim(), email: email.trim().toLowerCase(), phone: phone.trim(), password, confirmPassword }); sessionStorage.setItem('smartqueue.pendingEmail', result.user.email); navigate('/verify-otp', { state: { deliveryConfigured: result.deliveryConfigured, developmentCodeAvailable: Boolean(result.developmentOnlyOtp) } }) }
     catch (cause) { setApiError(cause instanceof Error ? cause.message : 'Registration failed.') } finally { setLoading(false) }
   }
 

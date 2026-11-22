@@ -1,6 +1,6 @@
 import { ArrowLeft, Mail, ShieldCheck } from 'lucide-react'
 import { useState, type FormEvent } from 'react'
-import { Link, useNavigate } from 'react-router-dom'
+import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import { AuthInput } from '../components/auth/AuthInput'
 import { PasswordInput } from '../components/auth/PasswordInput'
 import { BrandLogo } from '../components/common/BrandLogo'
@@ -9,9 +9,10 @@ import { login, requestPasswordReset, resetPassword } from '../services/api/auth
 
 export function LoginPage() {
   const navigate = useNavigate(); const { signIn } = useAuth()
+  const [searchParams] = useSearchParams()
   const [identifier, setIdentifier] = useState(''); const [password, setPassword] = useState(''); const [rememberMe, setRememberMe] = useState(false)
   const [error, setError] = useState(''); const [message, setMessage] = useState(''); const [loading, setLoading] = useState(false)
-  const [recovery, setRecovery] = useState(false); const [resetToken, setResetToken] = useState(''); const [newPassword, setNewPassword] = useState(''); const [confirmPassword, setConfirmPassword] = useState('')
+  const [recovery, setRecovery] = useState(() => searchParams.has('resetToken')); const [resetToken, setResetToken] = useState(() => searchParams.get('resetToken') ?? ''); const [newPassword, setNewPassword] = useState(''); const [confirmPassword, setConfirmPassword] = useState('')
   const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault(); setError(''); setMessage(''); setLoading(true)
     try { const session = await login({ email: identifier.trim(), password }); signIn(session, rememberMe); navigate(session.user.role === 'admin' ? '/admin/dashboard' : '/citizen/dashboard', { replace: true }) }

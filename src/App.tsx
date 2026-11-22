@@ -3,6 +3,8 @@ import './styles/dashboard.css'
 import { BrowserRouter, Route, Routes } from 'react-router-dom'
 import { lazy, Suspense } from 'react'
 import { AuthProvider } from './context/AuthContext'
+import { AppPreferencesProvider } from './context/AppPreferences'
+import './styles/preferences.css'
 import { useAuth } from './context/useAuth'
 import { Navigate, useLocation } from 'react-router-dom'
 import type { ReactNode } from 'react'
@@ -20,6 +22,7 @@ const AppointmentsPage = lazy(() => import('./pages/AppointmentsPage').then((m) 
 const DocumentsPage = lazy(() => import('./pages/DocumentsPage').then((m) => ({ default: m.DocumentsPage })))
 const PublicStatisticsPage = lazy(() => import('./pages/PublicStatisticsPage').then((m) => ({ default: m.PublicStatisticsPage })))
 const AdminDashboard = lazy(() => import('./pages/AdminDashboard').then((m) => ({ default: m.AdminDashboard })))
+const AdminWalkInRegistrationPage = lazy(() => import('./pages/AdminWalkInRegistrationPage').then((m) => ({ default: m.AdminWalkInRegistrationPage })))
 const AdminQueueManagementPage = lazy(() => import('./pages/AdminQueueManagementPage').then((m) => ({ default: m.AdminQueueManagementPage })))
 const AdminCounterManagementPage = lazy(() => import('./pages/AdminCounterManagementPage').then((m) => ({ default: m.AdminCounterManagementPage })))
 const AdminAiInsightsPage = lazy(() => import('./pages/AdminAiInsightsPage').then((m) => ({ default: m.AdminAiInsightsPage })))
@@ -27,10 +30,12 @@ const AdminTokenManagementPage = lazy(() => import('./pages/AdminTokenManagement
 const AdminAppointmentsPage = lazy(() => import('./pages/AdminAppointmentsPage').then((m) => ({ default: m.AdminAppointmentsPage })))
 const AdminReportsPage = lazy(() => import('./pages/AdminReportsPage').then((m) => ({ default: m.AdminReportsPage })))
 const AdminSettingsPage = lazy(() => import('./pages/AdminSettingsPage').then((m) => ({ default: m.AdminSettingsPage })))
+const QueueDisplayPage = lazy(() => import('./pages/QueueDisplayPage').then((m) => ({ default: m.QueueDisplayPage })))
 
 function App() {
   return (
     <BrowserRouter>
+      <AppPreferencesProvider>
       <AuthProvider><Suspense fallback={<main className="auth-page" role="status">Loading page…</main>}><Routes>
         <Route path="/" element={<LandingPage />} />
         <Route path="/login" element={<LoginPage />} />
@@ -43,7 +48,9 @@ function App() {
         <Route path="/citizen/profile" element={<RequireRole role="citizen"><CitizenProfilePage /></RequireRole>} />
         <Route path="/citizen/queue/:tokenId" element={<RequireRole role="citizen"><QueueTrackingPage /></RequireRole>} />
         <Route path="/public-statistics" element={<PublicStatisticsPage />} />
+        <Route path="/admin/queue-display" element={<QueueDisplayPage />} />
         <Route path="/admin/dashboard" element={<RequireRole role="admin"><AdminDashboard /></RequireRole>} />
+        <Route path="/admin/walk-in-registration" element={<RequireRole role="admin"><AdminWalkInRegistrationPage /></RequireRole>} />
         <Route path="/admin/queue-management" element={<RequireRole role="admin"><AdminQueueManagementPage /></RequireRole>} />
         <Route path="/admin/token-management" element={<RequireRole role="admin"><AdminTokenManagementPage /></RequireRole>} />
         <Route path="/admin/appointments" element={<RequireRole role="admin"><AdminAppointmentsPage /></RequireRole>} />
@@ -53,6 +60,7 @@ function App() {
         <Route path="/admin/settings" element={<RequireRole role="admin"><AdminSettingsPage /></RequireRole>} />
         <Route path="*" element={<NotFoundPage />} />
       </Routes></Suspense></AuthProvider>
+      </AppPreferencesProvider>
     </BrowserRouter>
   )
 }

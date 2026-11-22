@@ -1,4 +1,4 @@
-import { BarChart3, Bell, CalendarDays, ChevronDown, ClipboardList, LayoutDashboard, LogOut, Menu, Settings, SlidersHorizontal, Sparkles, Ticket, X } from 'lucide-react'
+import { BarChart3, Bell, CalendarDays, ChevronDown, ClipboardList, LayoutDashboard, LogOut, Menu, Monitor, Settings, SlidersHorizontal, Sparkles, Ticket, UserRoundPlus, X } from 'lucide-react'
 import { useState } from 'react'
 import type { ReactNode } from 'react'
 import { NavLink, useLocation, useNavigate } from 'react-router-dom'
@@ -10,7 +10,9 @@ type AdminDashboardLayoutProps = { children: ReactNode }
 
 const navigation = [
   { label: 'Overview', to: '/admin/dashboard', icon: LayoutDashboard },
+  { label: 'Register Walk-in Patient', to: '/admin/walk-in-registration', icon: UserRoundPlus },
   { label: 'Queue Management', to: '/admin/queue-management', icon: ClipboardList },
+  { label: 'Queue Display', to: '/admin/queue-display', icon: Monitor },
   { label: 'Token Management', to: '/admin/token-management', icon: Ticket },
   { label: 'Appointments', to: '/admin/appointments', icon: CalendarDays },
   { label: 'Counter Management', to: '/admin/counter-management', icon: SlidersHorizontal },

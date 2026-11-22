@@ -23,9 +23,12 @@ export interface AuthRepository {
   setPassword(id: string, passwordHash: string, changedAt: Date): Promise<boolean>
   findById(id: string): Promise<UserRecord | null>
   findByEmail(email: string): Promise<UserRecord | null>
-  saveVerificationCode(email: string, codeHash: string, expiresAt: Date): Promise<boolean>
-  consumeVerificationCode(email: string, codeHash: string, now: Date): Promise<UserRecord | null>
-  saveResetToken(email: string, tokenHash: string, expiresAt: Date): Promise<boolean>
+  saveVerificationCode(email: string, codeHash: string, expiresAt: Date, issuedAt: Date, cooldownBefore: Date): Promise<boolean>
+  incrementVerificationAttempts(email: string, now: Date, maxAttempts: number): Promise<boolean>
+  consumeVerificationCode(email: string, codeHash: string, now: Date, maxAttempts: number): Promise<UserRecord | null>
+  invalidateVerificationCode(email: string): Promise<void>
+  saveResetToken(email: string, tokenHash: string, expiresAt: Date, issuedAt: Date, cooldownBefore: Date): Promise<boolean>
+  invalidateResetToken(email: string): Promise<void>
   consumeResetToken(tokenHash: string, passwordHash: string, changedAt: Date): Promise<boolean>
   revokeToken(tokenId: string, expiresAt: Date): Promise<void>
   isTokenRevoked(tokenId: string): Promise<boolean>
@@ -87,21 +90,31 @@ export const mongooseAuthRepository: AuthRepository = {
     const user = await UserModel.findOne({ email }).exec()
     return user ? toUserRecord(user) : null
   },
-  async saveVerificationCode(email, codeHash, expiresAt) {
-    const result = await UserModel.updateOne({ email, emailVerified: false }, { $set: { verificationCodeHash: codeHash, verificationCodeExpiresAt: expiresAt } }).exec()
+  async saveVerificationCode(email, codeHash, expiresAt, issuedAt, cooldownBefore) {
+    const result = await UserModel.updateOne({ email, emailVerified: false, $or: [{ verificationCodeIssuedAt: { $exists: false } }, { verificationCodeIssuedAt: { $lte: cooldownBefore } }] }, { $set: { verificationCodeHash: codeHash, verificationCodeExpiresAt: expiresAt, verificationCodeIssuedAt: issuedAt, verificationCodeAttempts: 0 } }).exec()
     return result.modifiedCount === 1 || result.matchedCount === 1
   },
-  async consumeVerificationCode(email, codeHash, now) {
+  async incrementVerificationAttempts(email, now, maxAttempts) {
+    const result = await UserModel.updateOne({ email, emailVerified: false, verificationCodeHash: { $exists: true }, verificationCodeExpiresAt: { $gt: now }, $or: [{ verificationCodeAttempts: { $lt: maxAttempts } }, { verificationCodeAttempts: { $exists: false } }] }, { $inc: { verificationCodeAttempts: 1 } }).exec()
+    return result.modifiedCount === 1
+  },
+  async consumeVerificationCode(email, codeHash, now, maxAttempts) {
     const user = await UserModel.findOneAndUpdate(
-      { email, emailVerified: false, verificationCodeHash: codeHash, verificationCodeExpiresAt: { $gt: now } },
-      { $set: { emailVerified: true }, $unset: { verificationCodeHash: 1, verificationCodeExpiresAt: 1 } },
+      { email, emailVerified: false, verificationCodeHash: codeHash, verificationCodeExpiresAt: { $gt: now }, $or: [{ verificationCodeAttempts: { $lt: maxAttempts } }, { verificationCodeAttempts: { $exists: false } }] },
+      { $set: { emailVerified: true }, $unset: { verificationCodeHash: 1, verificationCodeExpiresAt: 1, verificationCodeIssuedAt: 1, verificationCodeAttempts: 1 } },
       { new: true, runValidators: true },
     ).exec()
     return user ? toUserRecord(user) : null
   },
-  async saveResetToken(email, tokenHash, expiresAt) {
-    const result = await UserModel.updateOne({ email }, { $set: { passwordResetTokenHash: tokenHash, passwordResetExpiresAt: expiresAt } }).exec()
+  async invalidateVerificationCode(email) {
+    await UserModel.updateOne({ email, emailVerified: false }, { $unset: { verificationCodeHash: 1, verificationCodeExpiresAt: 1, verificationCodeAttempts: 1 } }).exec()
+  },
+  async saveResetToken(email, tokenHash, expiresAt, issuedAt, cooldownBefore) {
+    const result = await UserModel.updateOne({ email, $or: [{ passwordResetIssuedAt: { $exists: false } }, { passwordResetIssuedAt: { $lte: cooldownBefore } }] }, { $set: { passwordResetTokenHash: tokenHash, passwordResetExpiresAt: expiresAt, passwordResetIssuedAt: issuedAt } }).exec()
     return result.modifiedCount === 1 || result.matchedCount === 1
+  },
+  async invalidateResetToken(email) {
+    await UserModel.updateOne({ email }, { $unset: { passwordResetTokenHash: 1, passwordResetExpiresAt: 1 } }).exec()
   },
   async consumeResetToken(tokenHash, passwordHash, changedAt) {
     const result = await UserModel.updateOne(

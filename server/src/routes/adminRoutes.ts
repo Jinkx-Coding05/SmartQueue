@@ -10,6 +10,7 @@ export function createAdminRouter(service: AdminService = adminService, authenti
   const aiInsightLimiter = rateLimit({ windowMs: env.geminiRateLimitWindowMs, limit: env.geminiRateLimitMax, standardHeaders: 'draft-8', legacyHeaders: false, message: { status: 'error', message: 'AI insight requests are temporarily rate limited. Try again shortly.' } })
   router.use(authenticate, requireAdmin)
   router.get('/dashboard', c.dashboard); router.get('/dashboard/metrics', c.metrics); router.get('/dashboard/recent-activity', c.activity)
+  router.post('/walk-in-patients', c.registerWalkIn)
   router.get('/tokens', c.tokens); router.get('/tokens/:id', c.token); router.patch('/tokens/:id/status', c.tokenStatus); router.post('/tokens/:id/call', c.callToken); router.post('/tokens/:id/skip', c.skipToken); router.post('/tokens/:id/complete', c.completeToken); router.post('/tokens/:id/cancel', c.cancelToken)
   router.get('/appointments', c.appointments); router.get('/appointments/:id', c.appointment); router.patch('/appointments/:id/status', c.appointmentStatus); router.post('/appointments/:id/approve', c.approveAppointment); router.post('/appointments/:id/reschedule', c.reschedule); router.post('/appointments/:id/cancel', c.cancelAppointment); router.post('/appointments/:id/complete', c.completeAppointment)
   router.get('/departments', c.departments); router.post('/departments', c.createDepartment); router.get('/departments/:id', c.department); router.patch('/departments/:id', c.patchDepartment); router.delete('/departments/:id', c.deleteDepartment)

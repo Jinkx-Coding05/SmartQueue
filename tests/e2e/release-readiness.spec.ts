@@ -8,6 +8,80 @@ test.beforeEach(async ({ page }) => {
   await page.route('https://fonts.googleapis.com/**', (route) => route.fulfill({ status: 200, contentType: 'text/css', body: '' }))
 })
 
+
+test('public queue display is read-only, shows live token data, and supports saved display preferences', async ({ page }) => {
+  const errors = watchBrowserErrors(page)
+  await page.route('**/api/public/queue-display', (route) => route.fulfill({ status: 200, headers: corsHeaders, body: JSON.stringify({ status: 'success', data: { lastUpdatedAt: new Date().toISOString(), timeZone: 'Asia/Kolkata', refreshIntervalSeconds: 12, departments: [{ id: 'department-1', name: 'General Medicine', activeCounters: ['CTR-01'], entries: [{ sequence: 1, tokenId: 'SQ-TEST-001', department: 'General Medicine', priority: 'normal', status: 'waiting', counter: 'CTR-01', estimatedWaitingTimeMinutes: 2, estimatedArrivalAt: new Date(Date.now() + 120000).toISOString() }] }] } }) }))
+  await page.goto('/admin/queue-display')
+  await expect(page.getByRole('heading', { name: 'Hospital Live Queue' })).toBeVisible()
+  await expect(page.getByRole('row').filter({ hasText: 'SQ-TEST-001' })).toBeVisible()
+  await expect(page.getByText('2 min')).toBeVisible()
+  await expect(page.getByText(/Last updated/)).toBeVisible()
+  await page.locator('select[aria-label]').first().selectOption('mr')
+  await expect.poll(() => page.evaluate(() => localStorage.getItem('smartqueue.language'))).toBe('mr')
+  await expect(page.getByRole('heading', { name: 'रुग्णालयाची थेट रांग' })).toBeVisible()
+  await page.locator('.queue-display-toolbar button').first().click()
+  await expect.poll(() => page.evaluate(() => localStorage.getItem('smartqueue.theme'))).toBe('dark')
+  await expect.poll(() => page.evaluate(() => document.documentElement.dataset.theme)).toBe('dark')
+  expect(errors).toEqual([])
+})
+
+test('global preferences persist and restore across navigation reloads', async ({ page }) => {
+  await page.goto('/')
+  await page.locator('.app-preference-controls select').first().selectOption('mr')
+  await page.locator('.app-preference-controls button').first().click()
+  await page.reload()
+  await expect(page.locator('.app-preference-controls select').first()).toHaveValue('mr')
+  await expect.poll(() => page.evaluate(() => document.documentElement.dataset.theme)).toBe('dark')
+})
+
+test('citizen dashboard countdown ticks and receives the next queue state by polling', async ({ page }) => {
+  const errors = watchBrowserErrors(page)
+  await installApiMock(page)
+  const arrivalAt = new Date(Date.now() + 3_500).toISOString()
+  let tokenLoads = 0
+  await page.route('**/api/tokens/my**', (route) => {
+    tokenLoads += 1
+    const status = tokenLoads > 1 ? 'serving' : 'waiting'
+    return route.fulfill({ status: 200, headers: corsHeaders, body: JSON.stringify({ status: 'success', data: { items: [{ id: 'token-1', tokenNumber: 'A101', status, estimatedWaitingTime: 0, department: { id: department._id, name: department.name }, assignedCounter: null, bookingDate: new Date().toISOString() }], pagination: { page: 1, limit: 50, total: 1, pages: 1 } } }) })
+  })
+  await page.route('**/api/tokens/token-1/tracking', (route) => {
+    const status = tokenLoads > 1 ? 'serving' : 'waiting'
+    return route.fulfill({ status: 200, headers: corsHeaders, body: JSON.stringify({ status: 'success', data: { tracking: { id: 'token-1', tokenNumber: 'A101', status, queuePosition: status === 'waiting' ? 2 : 0, patientsAhead: status === 'waiting' ? 1 : 0, department: { id: department._id, name: department.name }, assignedCounter: null, currentlyServingToken: status === 'serving' ? 'A101' : 'A099', estimatedWaitingTime: status === 'waiting' ? 1 : 0, estimatedArrivalAt: status === 'waiting' ? arrivalAt : new Date().toISOString(), lastUpdatedAt: new Date().toISOString() } } }) })
+  })
+  await signIn(page, 'citizen@example.test')
+  const estimate = page.locator('.dashboard-stats-grid').getByText('1 min', { exact: true })
+  await expect(estimate).toBeVisible()
+  await expect(page.locator('.dashboard-stats-grid').getByText('0 min', { exact: true })).toBeVisible({ timeout: 7_000 })
+  await expect(page.locator('.dashboard-stats-grid').getByText('Now serving', { exact: true })).toBeVisible({ timeout: 15_000 })
+  expect(tokenLoads).toBeGreaterThan(1)
+  expect(errors).toEqual([])
+})
+
+test('admin dashboard countdown ticks and refreshes queue state from its API', async ({ page }) => {
+  const errors = watchBrowserErrors(page)
+  await installApiMock(page)
+  const arrivalAt = new Date(Date.now() + 60_000).toISOString()
+  let tokenLoads = 0
+  await page.route('http://localhost:4000/api/admin/dashboard', (route) => route.fulfill({ status: 200, headers: corsHeaders, body: JSON.stringify({ status: 'success', data: { totalTokensToday: 1, tokensByStatus: { waiting: tokenLoads > 1 ? 0 : 1, serving: tokenLoads > 1 ? 1 : 0 }, estimatedWaitMinutes: 1, lastUpdatedAt: new Date().toISOString(), departmentQueues: [{ department: { name: department.name }, waiting: tokenLoads > 1 ? 0 : 1, serving: tokenLoads > 1 ? 1 : 0, estimatedWaitMinutes: tokenLoads > 1 ? 0 : 1, estimatedArrivalAt: tokenLoads > 1 ? new Date().toISOString() : arrivalAt }] } }) }))
+  await page.route('http://localhost:4000/api/admin/counters**', (route) => route.fulfill({ status: 200, headers: corsHeaders, body: JSON.stringify({ status: 'success', data: { items: [], pagination: { page: 1, limit: 100, total: 0, pages: 0 } } }) }))
+  await page.route('http://localhost:4000/api/admin/appointments**', (route) => route.fulfill({ status: 200, headers: corsHeaders, body: JSON.stringify({ status: 'success', data: { items: [], pagination: { page: 1, limit: 100, total: 0, pages: 0 } } }) }))
+  await page.route('http://localhost:4000/api/admin/tokens**', (route) => {
+    tokenLoads += 1
+    const status = tokenLoads > 1 ? 'serving' : 'waiting'
+    const item = { _id: 'token-1', tokenNumber: 'A101', citizen: { fullName: 'Test Patient' }, department: { _id: department._id, name: department.name }, priority: 'normal', liveEstimatedWaitingTime: status === 'waiting' ? 1 : 0, estimatedArrivalAt: status === 'waiting' ? arrivalAt : new Date().toISOString(), status, bookingDate: new Date().toISOString() }
+    return route.fulfill({ status: 200, headers: corsHeaders, body: JSON.stringify({ status: 'success', data: { items: [item], pagination: { page: 1, limit: 100, total: 1, pages: 1 } } }) })
+  })
+  await page.addInitScript((session) => sessionStorage.setItem('smartqueue.session', JSON.stringify(session)), { user: admin, accessToken: 'admin-test-token', persistent: false })
+  await page.goto('/admin/dashboard')
+  await expect(page.getByRole('heading', { name: 'Queue command center' })).toBeVisible({ timeout: 20_000 })
+  const stats = page.locator('.admin-stats-grid')
+  await expect(stats.getByText('1 min', { exact: true })).toBeVisible({ timeout: 8_000 })
+  await expect(page.getByRole('row').filter({ hasText: 'A101' }).getByText('Serving', { exact: true }).first()).toBeVisible({ timeout: 20_000 })
+  expect(tokenLoads).toBeGreaterThan(1)
+  expect(errors).toEqual([])
+})
+
 test('citizen completes booking, tracking, appointments, profile, documents, refresh, and logout', async ({ page }) => {
   const errors = watchBrowserErrors(page)
   const state = await installApiMock(page)
@@ -17,11 +91,11 @@ test('citizen completes booking, tracking, appointments, profile, documents, ref
   await expect(page.getByRole('heading', { name: /Welcome, Test/i })).toBeVisible()
 
   await page.getByRole('link', { name: 'Book a New Token' }).click()
-  await page.getByRole('button', { name: /City General Hospital/ }).click()
+  await expect(page.getByText('City General Hospital', { exact: true }).first()).toBeVisible()
   await page.getByRole('button', { name: 'General Medicine' }).click()
   await page.getByRole('button', { name: /New Consultation/ }).click()
   await page.locator('#visit-date').fill(tomorrow())
-  await page.getByRole('button', { name: '10:30 AM' }).click()
+  await page.locator('#visit-time').fill('10:30')
   await page.getByLabel('Government ID').check()
   await page.getByRole('button', { name: /Confirm & generate token/ }).click()
   await expect(page.getByRole('heading', { name: 'Your token has been booked' })).toBeVisible()
@@ -122,6 +196,40 @@ test('admin operates counters, queue, tokens, appointments, reports, insights, p
   expect(errors).toEqual([])
 })
 
+test('admin registers a walk-in patient and sees the generated token in the queue', async ({ page }) => {
+  const errors = watchBrowserErrors(page)
+  await installApiMock(page)
+  const walkInToken = { _id: 'walk-in-token-1', tokenNumber: 'SQ-20261122-WALK01', citizen: { fullName: 'Walk-in Patient' }, department: { _id: department._id, name: department.name }, counter: { _id: 'counter-available', counterNumber: 'CTR-01', name: 'Registration Desk' }, priority: 'normal', estimatedWaitingTime: 15, status: 'waiting', bookingDate: new Date().toISOString() }
+  await page.route('**/api/admin/counters**', (route) => route.fulfill({ status: 200, headers: corsHeaders, body: JSON.stringify({ status: 'success', data: { items: [{ _id: 'counter-available', counterNumber: 'CTR-01', name: 'Registration Desk', department: { _id: department._id, name: department.name }, status: 'available', currentServingTokenId: null }], pagination: { page: 1, limit: 100, total: 1, pages: 1 } } }) }))
+  await page.route('**/api/admin/departments**', (route) => route.fulfill({ status: 200, headers: corsHeaders, body: JSON.stringify({ status: 'success', data: { items: [department], pagination: { page: 1, limit: 100, total: 1, pages: 1 } } }) }))
+  await page.route('**/api/admin/walk-in-patients', (route) => route.fulfill({ status: 201, headers: corsHeaders, body: JSON.stringify({ status: 'success', data: { patient: { id: 'walk-in-patient-1', fullName: 'Walk-in Patient', phoneNumber: '+919876543210' }, token: walkInToken } }) }))
+  await page.route('**/api/admin/tokens**', (route) => route.fulfill({ status: 200, headers: corsHeaders, body: JSON.stringify({ status: 'success', data: { items: [walkInToken], pagination: { page: 1, limit: 100, total: 1, pages: 1 } } }) }))
+  await signIn(page, 'admin@example.test')
+  await page.getByRole('link', { name: 'Register Walk-in Patient' }).first().click()
+  await expect(page.getByRole('heading', { name: 'Register Walk-in Patient' })).toBeVisible()
+  await page.getByLabel('Patient name').fill('Walk-in Patient')
+  await page.getByLabel('Phone number').fill('+919876543210')
+  await page.locator('.walk-in-form select').nth(0).selectOption(department._id)
+  await page.locator('.walk-in-form select').nth(1).selectOption('counter-available')
+  await page.getByRole('button', { name: 'Register Patient' }).click()
+  await expect(page.getByRole('heading', { name: 'SQ-20261122-WALK01' })).toBeVisible()
+  await page.getByRole('link', { name: 'View queue' }).click()
+  await expect(page.getByRole('cell', { name: 'Walk-in Patient' })).toBeVisible()
+  await expect(page.getByRole('cell', { name: 'CTR-01' })).toBeVisible()
+  expect(errors).toEqual([])
+})
+
+test('walk-in patient fields remain visible when department options fail to load', async ({ page }) => {
+  await installApiMock(page)
+  await page.route('**/api/admin/departments**', (route) => route.fulfill({ status: 503, headers: corsHeaders, body: JSON.stringify({ status: 'error', message: 'Departments service is unavailable.' }) }))
+  await signIn(page, 'admin@example.test')
+  await page.goto('/admin/walk-in-registration')
+  await expect(page.getByRole('alert')).toContainText('Departments service is unavailable.')
+  await expect(page.getByLabel('Patient name')).toBeVisible()
+  await expect(page.getByLabel('Phone number')).toBeVisible()
+  await expect(page.locator('.walk-in-form select').nth(0)).toBeDisabled()
+})
+
 test('route boundaries, empty/error states, and document metadata are visible in the browser', async ({ page }) => {
   const errors = watchBrowserErrors(page)
   await page.goto('/citizen/dashboard')
@@ -165,6 +273,7 @@ async function installApiMock(page: Page): Promise<MockState> {
     } else if (path === '/auth/me') data = { user: currentUser(request) }
     else if (path === '/auth/logout') data = { message: 'Logged out.' }
     else if (path === '/departments') data = { departments: [{ ...department, id: department._id }] }
+    else if (path === '/public/statistics') data = { source: 'aggregated backend data', period: 'today', summary: { tokensGenerated: 1, patientsServed: 0, averageEstimatedWaitMinutes: 2, activeCounters: 1, activeDepartments: 1 }, waitingTrend: [], departmentPerformance: [], peakHours: [], serviceCenter: { name: 'City General Hospital' } }
     else if (path === '/tokens' && method === 'POST') {
       state.booking = body ?? {}
       data = { token: { id: 'token-1', tokenNumber: 'A101', department: { name: department.name }, bookingDate: new Date().toISOString(), preferredVisitDate: body?.preferredVisitDate, preferredTime: body?.preferredTime, visitType: body?.visitType, status: 'waiting', estimatedWaitingTime: 15 } }
@@ -209,6 +318,7 @@ async function signIn(page: Page, email: string) {
   await page.getByLabel('Email address').fill(email)
   await page.locator('#login-password').fill('Development-Test-Password-123!')
   await page.getByRole('button', { name: 'Sign In' }).click()
+  await expect(page).toHaveURL(email.startsWith('admin') ? /\/admin\/dashboard$/ : /\/citizen\/dashboard$/, { timeout: 12_000 })
 }
 
 function watchBrowserErrors(page: Page) {

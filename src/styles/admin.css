@@ -20,3 +20,4 @@
 .queue-status--confirmed { color: #146b4a; background: #e6f7ef; }
 .queue-status--serving { color: #2878d0; background: #eaf3fc; }
 .queue-status--skipped { color: #a23b2b; background: #fdebe8; }
+.admin-welcome-actions { display: flex; flex-wrap: wrap; gap: .6rem; }

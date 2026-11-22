@@ -27,6 +27,7 @@ export function createAdminController(service: AdminService) {
   const tokenStatus = validate(v.tokenStatusSchema, 'body')((r, body) => service.updateToken(actor(r), param(r), body.status, body.note))
   const callNext = validate(v.callTokenSchema, 'body')((r, body) => service.callNext(actor(r), String(r.params.departmentId), body.counterId))
   const callToken = validate(v.callTokenSchema, 'body')((r, body) => service.callToken(actor(r), param(r), body.counterId))
+  const registerWalkIn = validate(v.walkInRegistrationSchema, 'body')((r, body) => service.registerWalkInPatient(actor(r), body), 201)
   const appointmentStatus = validate(v.appointmentAdminStatusSchema, 'body')((r, body) => service.updateAppointment(actor(r), param(r), body.status, body.note))
   const reschedule = validate(v.appointmentRescheduleSchema, 'body')((r, body) => service.rescheduleAppointment(actor(r), param(r), body.appointmentDate, body.appointmentTime, body.note))
   const queueSettings = validate(v.queueSettingsSchema, 'body')((r, body) => service.updateQueueSettings(actor(r), String(r.params.departmentId), body))
@@ -36,7 +37,7 @@ export function createAdminController(service: AdminService) {
   const ownNotificationPreferences = run(r => service.getAdminNotificationPreferences(actor(r)))
   const patchOwnNotificationPreferences = validate(v.adminNotificationPreferencesSchema, 'body')((r, body) => service.updateAdminNotificationPreferences(actor(r), body))
   return {
-    dashboard: run(() => service.dashboard()), metrics: run(() => service.dashboard()),
+    dashboard: run(() => service.dashboard()), metrics: run(() => service.dashboard()), registerWalkIn,
     tokens: listTokens, token: run(r => service.token(param(r))), tokenStatus, callToken,
     skipToken: run(r => service.updateToken(actor(r), param(r), 'skipped')), completeToken: run(r => service.updateToken(actor(r), param(r), 'completed')), cancelToken: run(r => service.updateToken(actor(r), param(r), 'cancelled')),
     appointments: listAppointments, appointment: run(r => service.appointment(param(r))), appointmentStatus, reschedule,

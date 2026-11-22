@@ -61,13 +61,30 @@ test('token booking prevents duplicates, calculates queue position, enforces own
   const tracking = await request(`/api/tokens/${tokenId}/tracking`, { headers: auth(citizenId) })
   assert.equal(tracking.status, 200)
   assert.equal(tracking.data.tracking.queuePosition, 2)
+  assert.equal(tracking.data.tracking.patientsAhead, 2)
   assert.equal(tracking.data.tracking.estimatedWaitingTime, 7)
+  assert.equal(tracking.data.tracking.arrivalBufferMinutes, 15)
+  assert.equal(Date.parse(tracking.data.tracking.suggestedArrivalAt) - Date.parse(tracking.data.tracking.estimatedArrivalAt), 15 * 60_000)
   assert.equal(tracking.data.tracking.currentlyServingToken, 'SQ-SERVING')
   assert.equal(tracking.data.tracking.preferredVisitDate, preferences.preferredVisitDate)
   assert.equal((await request('/api/tokens/my?page=1&limit=10', { headers: auth(citizenId) })).data.items.length, 1)
   assert.equal((await request(`/api/tokens/${tokenId}`, { headers: auth(citizenId) })).status, 200)
   assert.equal((await request(`/api/tokens/${tokenId}`, { headers: auth(otherCitizenId) })).status, 404)
   assert.equal((await request(`/api/tokens/${tokenId}/cancel`, { method: 'POST', headers: auth(otherCitizenId) })).status, 404)
+  repository.tokens.find((item) => item.tokenNumber === 'SQ-AHEAD').status = 'completed'
+  repository.tokens.find((item) => item.tokenNumber === 'SQ-SERVING').status = 'completed'
+  const recalculated = await request(`/api/tokens/${tokenId}/tracking`, { headers: auth(citizenId) })
+  assert.equal(recalculated.data.tracking.patientsAhead, 0)
+  assert.equal(recalculated.data.tracking.estimatedWaitingTime, 0)
+  repository.tokens.find((item) => item.id === tokenId).status = 'serving'
+  const called = await request(`/api/tokens/${tokenId}/tracking`, { headers: auth(citizenId) })
+  assert.equal(called.data.tracking.queuePosition, 0)
+  assert.equal(called.data.tracking.estimatedWaitingTime, 0)
+  repository.tokens.find((item) => item.id === tokenId).status = 'completed'
+  const finished = await request(`/api/tokens/${tokenId}/tracking`, { headers: auth(citizenId) })
+  assert.equal(finished.data.tracking.patientsAhead, null)
+  assert.equal(finished.data.tracking.estimatedWaitingTime, null)
+  repository.tokens.find((item) => item.id === tokenId).status = 'waiting'
   assert.equal((await request(`/api/tokens/${tokenId}/cancel`, { method: 'POST', headers: auth(citizenId) })).status, 200)
   assert.equal((await request(`/api/tokens/${tokenId}/cancel`, { method: 'POST', headers: auth(citizenId) })).status, 409)
   const completed = repository.seedToken({ tokenNumber: 'SQ-DONE', citizen: citizenId, departmentId, status: 'completed', bookingDate: new Date(), estimatedWaitingTime: 0 })
@@ -194,6 +211,9 @@ class MemoryCitizenRepository {
   async listOwnedTokens(userId, skip, limit) { const items = this.tokens.filter((item) => item.citizen === userId).slice(skip, skip + limit); return { items, total: this.tokens.filter((item) => item.citizen === userId).length } }
   async countWaitingAhead(deptId, date, id) { return this.tokens.filter((item) => item.departmentId === deptId && item.status === 'waiting' && item.id !== id && item.bookingDate.toDateString() === date.toDateString() && (item.bookingDate < date || (item.bookingDate.getTime() === date.getTime() && item.id < id))).length }
   async getCurrentlyServing(deptId) { const item = this.tokens.find((token) => token.departmentId === deptId && token.status === 'serving'); return item ? { tokenNumber: item.tokenNumber, counterName: 'Counter 01' } : null }
+  async getQueueSnapshot(deptId) {
+    return { tokens: this.tokens.filter((item) => item.departmentId === deptId && ['waiting', 'serving'].includes(item.status)).map((item) => ({ id: item.id, tokenNumber: item.tokenNumber, status: item.status, priority: item.priority ?? 'normal', bookingDate: item.bookingDate, ...(item.servingAt ? { servingAt: item.servingAt } : {}), ...(item.counterId ? { counterId: item.counterId } : {}) })), averageServiceMinutes: 7, serviceDurationSampleCount: 3, activeCounterCount: 2, priorityEnabled: true }
+  }
   async cancelOwnedToken(userId, id) { const item = await this.getOwnedToken(userId, id); if (!item || item.status !== 'waiting') return null; item.status = 'cancelled'; item.updatedAt = new Date(); return item }
   async findDuplicateAppointment(userId, deptId, date, time, excludeId) { return this.appointments.some((item) => item.citizen === userId && item.departmentId === deptId && item.appointmentDate.getTime() === date.getTime() && item.appointmentTime === time && ['pending', 'approved', 'rescheduled'].includes(item.status) && item.id !== excludeId) }
   async createAppointment(input) {

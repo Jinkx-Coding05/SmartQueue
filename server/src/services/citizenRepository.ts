@@ -21,6 +21,10 @@ export type TokenRecord = {
   id: string; tokenNumber: string; departmentId: string; departmentName: string; counterId?: string; counterName?: string
   status: TokenStatus; bookingDate: Date; estimatedWaitingTime: number; preferredVisitDate?: Date; preferredTime?: string; visitType?: string; createdAt: Date; updatedAt: Date
 }
+export type QueueSnapshot = {
+  tokens: Array<{ id: string; tokenNumber: string; status: TokenStatus; priority: 'normal' | 'priority' | 'emergency'; bookingDate: Date; servingAt?: Date; counterId?: string }>
+  averageServiceMinutes: number | null; serviceDurationSampleCount: number; activeCounterCount: number; priorityEnabled: boolean
+}
 export type AppointmentRecord = {
   id: string; appointmentId: string; departmentId: string; departmentName: string; appointmentDate: Date; appointmentTime: string
   status: AppointmentStatus; notes: string; createdAt: Date; updatedAt: Date
@@ -46,6 +50,7 @@ export interface CitizenRepository {
   listOwnedTokens(userId: string, skip: number, limit: number): Promise<PageResult<TokenRecord>>
   countWaitingAhead(departmentId: string, bookingDate: Date, tokenId: string, dayStart: Date, dayEnd: Date): Promise<number>
   getCurrentlyServing(departmentId: string, start: Date, end: Date): Promise<{ tokenNumber: string; counterName?: string } | null>
+  getQueueSnapshot(departmentId: string, start: Date, end: Date): Promise<QueueSnapshot>
   cancelOwnedToken(userId: string, tokenId: string): Promise<TokenRecord | null>
   findDuplicateAppointment(userId: string, departmentId: string, date: Date, time: string, excludeId?: string): Promise<boolean>
   createAppointment(input: { appointmentId: string; userId: string; departmentId: string; appointmentDate: Date; appointmentTime: string; notes: string; activeBookingKey: string }): Promise<AppointmentRecord>
@@ -176,6 +181,25 @@ export const mongooseCitizenRepository: CitizenRepository = {
     const token = row as unknown as TokenSource
     const counter = token.counter && !(token.counter instanceof Types.ObjectId) ? token.counter.name : undefined
     return { tokenNumber: token.tokenNumber, ...(counter ? { counterName: counter } : {}) }
+  },
+  async getQueueSnapshot(departmentId, start, end) {
+    const [department, counters, tokens, durations] = await Promise.all([
+      DepartmentModel.findById(departmentId).select('queueSettings.priorityEnabled').lean().exec(),
+      CounterModel.find({ department: departmentId, status: { $in: ['active', 'available', 'busy'] } }).select('_id').lean().exec(),
+      TokenModel.find({ department: departmentId, status: { $in: ACTIVE_TOKEN_STATUSES }, bookingDate: { $gte: start, $lt: end } }).select('tokenNumber status priority bookingDate servingAt counter').lean().exec(),
+      TokenModel.aggregate<{ average: number; sampleCount: number }>([
+        { $match: { department: objectId(departmentId), status: 'completed', servingAt: { $type: 'date' }, completedAt: { $type: 'date', $gte: new Date(Date.now() - 90 * 86400000) } } },
+        { $project: { minutes: { $divide: [{ $subtract: ['$completedAt', '$servingAt'] }, 60000] } } },
+        { $match: { minutes: { $gt: 0, $lte: 240 } } },
+        { $group: { _id: null, average: { $avg: '$minutes' }, sampleCount: { $sum: 1 } } },
+      ]).exec(),
+    ])
+    return {
+      tokens: tokens.map((row) => ({ id: row._id.toString(), tokenNumber: row.tokenNumber, status: row.status, priority: row.priority, bookingDate: row.bookingDate, ...(row.servingAt ? { servingAt: row.servingAt } : {}), ...(row.counter ? { counterId: row.counter.toString() } : {}) })),
+      averageServiceMinutes: Number.isFinite(durations[0]?.average) ? durations[0].average : null,
+      serviceDurationSampleCount: durations[0]?.sampleCount ?? 0,
+      activeCounterCount: counters.length, priorityEnabled: department?.queueSettings?.priorityEnabled !== false,
+    }
   },
   async cancelOwnedToken(userId, tokenId) {
     const row = await TokenModel.findOneAndUpdate({ _id: objectId(tokenId), citizen: userId, status: 'waiting' }, { $set: { status: 'cancelled' }, $unset: { activeBookingKey: 1 } }, { new: true })

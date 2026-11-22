@@ -39,6 +39,12 @@ export const counterStatusSchema = z.object({ status: z.enum(['active', 'availab
 
 export const tokenStatusSchema = z.object({ status: z.enum(['serving', 'completed', 'skipped', 'cancelled']), note: z.string().trim().max(300).optional() }).strict()
 export const callTokenSchema = z.object({ counterId: objectId.optional() }).strict()
+export const walkInRegistrationSchema = z.object({
+  fullName: z.string().trim().min(2).max(120),
+  phoneNumber: z.string().trim().min(8).max(24).regex(/^\+?[\d\s()-]+$/),
+  departmentId: objectId,
+  counterId: objectId,
+}).strict()
 export const queueSettingsSchema = z.object({
   maxDailyTokens: z.number().int().min(1).max(10000).optional(), priorityEnabled: z.boolean().optional(),
   showEstimatedWaitingTime: z.boolean().optional(), autoCallNext: z.boolean().optional(),

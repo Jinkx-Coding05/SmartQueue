@@ -7,6 +7,7 @@ const body = (method: string, value?: unknown): RequestInit => ({ method, ...(va
 
 export const adminApi = {
   dashboard: (token: string) => apiRequest('/admin/dashboard', {}, token),
+  registerWalkInPatient: (token: string, value: { fullName: string; phoneNumber: string; departmentId: string; counterId: string }) => apiRequest<{ patient: { id: string; fullName: string; phoneNumber: string }; token: Record<string, unknown> }>('/admin/walk-in-patients', body('POST', value), token),
   metrics: (token: string) => apiRequest('/admin/dashboard/metrics', {}, token),
   tokens: (token: string, filters: AdminTokenFilters = {}) => apiRequest<AdminPage<unknown>>(`/admin/tokens${query(filters)}`, {}, token),
   token: (token: string, id: string) => apiRequest(`/admin/tokens/${encodeURIComponent(id)}`, {}, token),

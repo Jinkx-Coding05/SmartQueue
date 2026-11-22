@@ -5,7 +5,7 @@ import { Link, useNavigate } from 'react-router-dom'
 import { DashboardLayout } from '../components/dashboard/DashboardLayout'
 import { formatBookingDate, getBookingDocuments, getNextAvailableDate, visitTypes } from '../services/mock/bookingData'
 import type { ServiceCenter } from '../services/mock/bookingData'
-import { bookToken, getDepartments } from '../services/api/citizenApi'
+import { bookToken, getDepartments, trackToken } from '../services/api/citizenApi'
 import { getPublicStatistics } from '../services/api/publicApi'
 import type { DepartmentApi } from '../types/citizenApi'
 import { useAuth } from '../context/useAuth'
@@ -65,7 +65,7 @@ export function BookingPage() {
     const selectedDepartment = departmentOptions.find((item) => item.name === department)
     if (!selectedDepartment) { setApiError('Select an available department.'); return }
     setSubmitting(true); setApiError('')
-    try { const booked = await bookToken(token, { departmentId: selectedDepartment.id, preferredVisitDate: date, preferredTime: time, visitType }); setConfirmation({ id: booked.id, token: booked.tokenNumber, center: center!, department: selectedDepartment.name, visitType: booked.visitType ?? visitType, date: booked.preferredVisitDate ?? booked.bookingDate, time: booked.preferredTime ?? time, wait: `${booked.estimatedWaitingTime} minutes` }); window.scrollTo({ top: 0, behavior: 'smooth' }) }
+    try { const booked = await bookToken(token, { departmentId: selectedDepartment.id, preferredVisitDate: date, preferredTime: time, visitType }); let wait = 'Unavailable'; try { const tracking = await trackToken(token, booked.id); if (tracking.estimatedWaitingTime !== null) wait = `${tracking.estimatedWaitingTime} minutes` } catch { /* The booking is saved; the tracking page can retry its live estimate. */ } setConfirmation({ id: booked.id, token: booked.tokenNumber, center: center!, department: selectedDepartment.name, visitType: booked.visitType ?? visitType, date: booked.preferredVisitDate ?? booked.bookingDate, time: booked.preferredTime ?? time, wait }); window.scrollTo({ top: 0, behavior: 'smooth' }) }
     catch (cause) { setApiError(cause instanceof Error ? cause.message : 'Token booking failed.') } finally { setSubmitting(false) }
   }
 
