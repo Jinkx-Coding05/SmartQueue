@@ -1,0 +1,51 @@
+import { apiRequest } from './http'
+import type { AdminAppointmentAction, AdminAppointmentFilters, AdminCounterFilters, AdminCounterInput, AdminDateFilters, AdminDepartmentFilters, AdminDepartmentInput, AdminNotificationPreferences, AdminPage, AdminProfile, AdminQueueSettings, AdminRescheduleRequest, AdminSettings, AdminTokenAction, AdminTokenFilters } from '../../types/adminApi'
+import type { AdminAiInsights } from '../../types/aiInsights'
+
+const query = (values: object = {}) => { const params = new URLSearchParams(); Object.entries(values).forEach(([key, value]) => { if (value !== undefined && value !== '') params.set(key, String(value)) }); const value = params.toString(); return value ? `?${value}` : '' }
+const body = (method: string, value?: unknown): RequestInit => ({ method, ...(value === undefined ? {} : { body: JSON.stringify(value) }) })
+
+export const adminApi = {
+  dashboard: (token: string) => apiRequest('/admin/dashboard', {}, token),
+  metrics: (token: string) => apiRequest('/admin/dashboard/metrics', {}, token),
+  tokens: (token: string, filters: AdminTokenFilters = {}) => apiRequest<AdminPage<unknown>>(`/admin/tokens${query(filters)}`, {}, token),
+  token: (token: string, id: string) => apiRequest(`/admin/tokens/${encodeURIComponent(id)}`, {}, token),
+  updateToken: (token: string, id: string, value: AdminTokenAction) => apiRequest(`/admin/tokens/${encodeURIComponent(id)}/status`, body('PATCH', value), token),
+  callToken: (token: string, id: string, counterId?: string) => apiRequest(`/admin/tokens/${encodeURIComponent(id)}/call`, body('POST', counterId ? { counterId } : {}), token),
+  skipToken: (token: string, id: string) => apiRequest(`/admin/tokens/${encodeURIComponent(id)}/skip`, body('POST'), token),
+  completeToken: (token: string, id: string) => apiRequest(`/admin/tokens/${encodeURIComponent(id)}/complete`, body('POST'), token),
+  cancelToken: (token: string, id: string) => apiRequest(`/admin/tokens/${encodeURIComponent(id)}/cancel`, body('POST'), token),
+  appointments: (token: string, filters: AdminAppointmentFilters = {}) => apiRequest<AdminPage<unknown>>(`/admin/appointments${query(filters)}`, {}, token),
+  updateAppointment: (token: string, id: string, value: AdminAppointmentAction) => apiRequest(`/admin/appointments/${encodeURIComponent(id)}/status`, body('PATCH', value), token),
+  approveAppointment: (token: string, id: string) => apiRequest(`/admin/appointments/${encodeURIComponent(id)}/approve`, body('POST'), token),
+  cancelAppointment: (token: string, id: string) => apiRequest(`/admin/appointments/${encodeURIComponent(id)}/cancel`, body('POST'), token),
+  completeAppointment: (token: string, id: string) => apiRequest(`/admin/appointments/${encodeURIComponent(id)}/complete`, body('POST'), token),
+  rescheduleAppointment: (token: string, id: string, value: AdminRescheduleRequest) => apiRequest(`/admin/appointments/${encodeURIComponent(id)}/reschedule`, body('PATCH', value), token),
+  departments: (token: string, filters: AdminDepartmentFilters = {}) => apiRequest<AdminPage<unknown>>(`/admin/departments${query(filters)}`, {}, token),
+  createDepartment: (token: string, value: AdminDepartmentInput) => apiRequest('/admin/departments', body('POST', value), token),
+  updateDepartment: (token: string, id: string, value: Partial<AdminDepartmentInput>) => apiRequest(`/admin/departments/${encodeURIComponent(id)}`, body('PATCH', value), token),
+  deleteDepartment: (token: string, id: string) => apiRequest(`/admin/departments/${encodeURIComponent(id)}`, body('DELETE'), token),
+  counters: (token: string, filters: AdminCounterFilters = {}) => apiRequest<AdminPage<unknown>>(`/admin/counters${query(filters)}`, {}, token),
+  createCounter: (token: string, value: AdminCounterInput) => apiRequest('/admin/counters', body('POST', value), token),
+  updateCounter: (token: string, id: string, value: Partial<AdminCounterInput>) => apiRequest(`/admin/counters/${encodeURIComponent(id)}`, body('PATCH', value), token),
+  setCounterStatus: (token: string, id: string, status: AdminCounterInput['status']) => apiRequest(`/admin/counters/${encodeURIComponent(id)}/status`, body('PATCH', { status }), token),
+  deleteCounter: (token: string, id: string) => apiRequest(`/admin/counters/${encodeURIComponent(id)}`, body('DELETE'), token),
+  queues: (token: string) => apiRequest('/admin/queues', {}, token),
+  queueSettings: (token: string, departmentId: string) => apiRequest(`/admin/queues/${encodeURIComponent(departmentId)}/settings`, {}, token),
+  updateQueueSettings: (token: string, departmentId: string, value: AdminQueueSettings) => apiRequest(`/admin/queues/${encodeURIComponent(departmentId)}/settings`, body('PATCH', value), token),
+  callNext: (token: string, departmentId: string, counterId?: string) => apiRequest(`/admin/queues/${encodeURIComponent(departmentId)}/call-next`, body('POST', counterId ? { counterId } : {}), token),
+  reports: (token: string, filters: AdminDateFilters = {}) => apiRequest(`/admin/reports${query(filters)}`, {}, token),
+  insights: (token: string, departmentId?: string) => apiRequest<AdminAiInsights>(`/admin/ai-insights/overview${query({ departmentId })}`, {}, token),
+  refreshInsights: (token: string, departmentId?: string) => apiRequest<AdminAiInsights>('/admin/ai-insights/refresh', body('POST', { ...(departmentId ? { departmentId } : {}) }), token),
+  peakHours: (token: string, departmentId?: string) => apiRequest(`/admin/ai-insights/peak-hours${query({ departmentId })}`, {}, token),
+  departmentPerformance: (token: string, departmentId?: string) => apiRequest(`/admin/ai-insights/department-performance${query({ departmentId })}`, {}, token),
+  waitTimeAnalysis: (token: string, departmentId?: string) => apiRequest(`/admin/ai-insights/wait-time-analysis${query({ departmentId })}`, {}, token),
+  recommendations: (token: string, departmentId?: string) => apiRequest(`/admin/ai-insights/recommendations${query({ departmentId })}`, {}, token),
+  settings: (token: string) => apiRequest('/admin/settings', {}, token),
+  updateSettings: (token: string, value: AdminSettings) => apiRequest('/admin/settings', body('PATCH', value), token),
+  activity: (token: string, filters: { page?: number; limit?: number; entityType?: string } = {}) => apiRequest(`/admin/activity${query(filters)}`, {}, token),
+  profile: (token: string) => apiRequest<AdminProfile>('/admin/profile', {}, token),
+  updateProfile: (token: string, value: Partial<Pick<AdminProfile, 'fullName' | 'phoneNumber'>>) => apiRequest<AdminProfile>('/admin/profile', body('PATCH', value), token),
+  notificationPreferences: (token: string) => apiRequest<AdminNotificationPreferences>('/admin/notification-preferences', {}, token),
+  updateNotificationPreferences: (token: string, value: AdminNotificationPreferences) => apiRequest<AdminNotificationPreferences>('/admin/notification-preferences', body('PATCH', value), token),
+}

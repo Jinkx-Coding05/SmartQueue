@@ -1,0 +1,31 @@
+import { ArrowLeft, BellRing, CalendarDays, ChevronRight, Clock3, Hospital, MapPin, RotateCw, Ticket, UsersRound } from 'lucide-react'
+import { useCallback, useEffect, useState } from 'react'
+import { Link, useParams } from 'react-router-dom'
+import { DashboardLayout } from '../components/dashboard/DashboardLayout'
+import { useAuth } from '../context/useAuth'
+import { getMyToken, trackToken } from '../services/api/citizenApi'
+import type { CitizenTokenApi, TokenTrackingApi } from '../types/citizenApi'
+import '../styles/queue.css'
+
+export function QueueTrackingPage() {
+  const { tokenId = '' } = useParams<{ tokenId: string }>(); const { token } = useAuth()
+  const [booking, setBooking] = useState<CitizenTokenApi | null>(null); const [tracking, setTracking] = useState<TokenTrackingApi | null>(null); const [error, setError] = useState(''); const [loading, setLoading] = useState(true)
+  const refresh = useCallback(async () => { if (!token) return; try { const [current, position] = await Promise.all([getMyToken(token, tokenId), trackToken(token, tokenId)]); setBooking(current); setTracking(position); setError('') } catch (cause) { setError(cause instanceof Error ? cause.message : 'Could not load queue status.') } finally { setLoading(false) } }, [token, tokenId])
+  useEffect(() => { queueMicrotask(() => { void refresh() }) }, [refresh])
+  const trackingStatus = tracking?.status
+  useEffect(() => { if (!trackingStatus || !['waiting', 'serving'].includes(trackingStatus)) return; const timer = window.setInterval(() => void refresh(), 10_000); return () => window.clearInterval(timer) }, [refresh, trackingStatus])
+  if (loading) return <DashboardLayout><div className="queue-empty-state" role="status">Loading your queue information…</div></DashboardLayout>
+  if (error || !booking || !tracking) return <DashboardLayout><div className="queue-empty-state"><Ticket size={28} /><h1>Queue information unavailable</h1><p>{error || 'The requested token was not found.'}</p><button className="button button--secondary" type="button" onClick={() => { setLoading(true); void refresh() }}>Retry</button><Link className="button button--primary" to="/citizen/dashboard">Back to dashboard</Link></div></DashboardLayout>
+  const terminal = ['completed', 'cancelled', 'skipped'].includes(tracking.status); const ahead = tracking.queuePosition ? tracking.queuePosition - 1 : 0; const progress = tracking.status === 'serving' || terminal ? 100 : Math.max(0, Math.min(95, 100 - ahead * 10))
+  const statusText = tracking.status[0].toUpperCase() + tracking.status.slice(1)
+  const date = new Date(booking.bookingDate).toLocaleString('en-IN', { dateStyle: 'medium', timeStyle: 'short' })
+  return <DashboardLayout><div className="queue-page"><header className="queue-page-header"><div><div className="queue-breadcrumb"><Link to="/citizen/dashboard">Dashboard</Link><ChevronRight size={14} /><span>My Queue</span></div><p className="dashboard-kicker">{'LIVE QUEUE TRACKING'}</p><h1>Track Your Queue</h1><p>{'Queue information is refreshed from the hospital system.'}</p></div><span className="queue-demo-badge"><RotateCw size={15} /> {'Live API data'}</span></header>
+    <div className="queue-demo-notice" role="status"><BellRing size={17} /><span><strong>{terminal ? 'Queue closed:' : 'Current status:'}</strong> {statusText}</span><small>{terminal ? 'Automatic refresh stopped.' : 'Refreshes every 10 seconds.'}</small></div>
+    <section className="queue-token-card"><div className="queue-token-main"><span className="queue-token-label">YOUR TOKEN</span><strong>{booking.tokenNumber}</strong><span className={`queue-status queue-status--${tracking.status}`}><span /> {statusText}</span></div><div className="queue-token-info"><InfoItem icon={<Hospital size={16} />} label="Department" value={tracking.department.name} /><InfoItem icon={<Ticket size={16} />} label="Token ID" value={booking.tokenNumber} /><InfoItem icon={<MapPin size={16} />} label="Counter" value={tracking.assignedCounter?.name ?? 'Not assigned'} /><InfoItem icon={<CalendarDays size={16} />} label="Booked" value={date} /></div></section>
+    <section className="queue-stats-grid" aria-label="Queue overview"><QueueStat icon={<Ticket size={19} />} label="Currently serving" value={tracking.currentlyServingToken ?? '—'} /><QueueStat icon={<UsersRound size={19} />} label="People ahead" value={String(ahead)} /><QueueStat icon={<Clock3 size={19} />} label="Estimated waiting" value={`${tracking.estimatedWaitingTime} minutes`} /></section>
+    <section className="queue-progress-card"><div className="queue-section-heading"><div><p className="dashboard-kicker">QUEUE POSITION</p><h2>{tracking.status === 'waiting' ? `Position ${tracking.queuePosition ?? '—'}` : statusText}</h2></div><span className="queue-progress-percent">{progress}%</span></div><div className="queue-progress-track" role="progressbar" aria-valuemin={0} aria-valuemax={100} aria-valuenow={progress}><span style={{ width: `${progress}%` }} /></div><p className="queue-estimate-note"><Clock3 size={14} /> {'Waiting time is the backend’s current estimate and may change.'}</p></section>
+    <div className="queue-actions"><Link className="button button--secondary" to="/citizen/dashboard"><ArrowLeft size={16} /> Back to dashboard</Link><Link className="button button--secondary" to="/citizen/appointments">My Appointments</Link><button className="button button--primary" type="button" onClick={() => { setLoading(true); void refresh() }}>Refresh now</button></div>
+  </div></DashboardLayout>
+}
+function QueueStat({ icon, label, value }: { icon: React.ReactNode; label: string; value: string }) { return <article className="queue-stat"><span className="queue-stat-icon">{icon}</span><span><small>{label}</small><strong>{value}</strong></span></article> }
+function InfoItem({ icon, label, value }: { icon: React.ReactNode; label: string; value: string }) { return <div className="queue-info-item"><span className="queue-info-icon">{icon}</span><span><small>{label}</small><strong>{value}</strong></span></div> }
