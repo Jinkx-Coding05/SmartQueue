@@ -2,6 +2,7 @@
   - type: web
     name: smartqueue-ai-api
     runtime: node
+    rootDir: .
     buildCommand: npm ci && npm run build:server
     startCommand: npm run server:start
     healthCheckPath: /api/health
