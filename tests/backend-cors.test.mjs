@@ -2,12 +2,12 @@ import assert from 'node:assert/strict'
 import { createServer } from 'node:http'
 import { after, test } from 'node:test'
 
-const frontendOrigin = 'https://smart-queue-94ceuh7kx-invicta-stack.vercel.app'
+const frontendOrigin = 'https://smart-queue-esg1lkhvc-invicta-stack.vercel.app'
 process.env.NODE_ENV = 'test'
 process.env.JWT_SECRET = 'cors-test-secret-that-is-long-enough'
 process.env.MONGODB_URI = ''
-process.env.CLIENT_URL = frontendOrigin
-process.env.CLIENT_URLS = 'http://localhost:5173'
+process.env.CLIENT_URL = 'http://localhost:5173'
+process.env.CLIENT_URLS = frontendOrigin
 
 const { app } = await import('../server/src/app.ts')
 const server = createServer(app)
@@ -30,6 +30,20 @@ test('CORS does not grant an unconfigured origin access', async () => {
   const response = await fetch(`${baseUrl}/api/health`, { headers: { Origin: 'https://untrusted.example' } })
   assert.equal(response.status, 200)
   assert.equal(response.headers.get('access-control-allow-origin'), null)
+})
+
+test('disallowed OPTIONS preflights do not fall through to Express automatic OPTIONS handling', async () => {
+  const response = await fetch(`${baseUrl}/api/auth/login`, {
+    method: 'OPTIONS',
+    headers: {
+      Origin: 'https://untrusted.example',
+      'Access-Control-Request-Method': 'POST',
+      'Access-Control-Request-Headers': 'content-type',
+    },
+  })
+  assert.equal(response.status, 403)
+  assert.equal(response.headers.get('access-control-allow-origin'), null)
+  assert.equal(response.headers.get('allow'), null)
 })
 
 test('API OPTIONS preflight allows POST, Authorization and Content-Type without cookie credentials', async () => {

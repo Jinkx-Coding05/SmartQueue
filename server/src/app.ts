@@ -23,6 +23,14 @@ app.use(cors({
   methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization'],
 }))
+// A disallowed preflight must not fall through to Express's automatic OPTIONS reply.
+app.use((request, response, next) => {
+  if (request.method === 'OPTIONS') {
+    response.status(403).json({ status: 'error', message: 'CORS origin is not allowed.' })
+    return
+  }
+  next()
+})
 app.use(express.json({ limit: '1mb' }))
 
 app.get('/', (_request, response) => {
